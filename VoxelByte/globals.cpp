@@ -11,6 +11,8 @@ void VB::init()
     m_player = std::make_shared<Player>();
     m_gui = std::make_shared<GUI>();
     m_input = std::make_shared<Input>();
+    m_window = std::make_shared<Window>(1920, 1080, "VoxelByte");
+    
     VB::inst().GetLogger()->Print("Singleton class constructed");
 }
 

@@ -1,8 +1,6 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
-#include "globals.h"
-
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <stdexcept>

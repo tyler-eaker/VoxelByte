@@ -301,7 +301,24 @@ void VoxelRenderer::RenderMesh(const ChunkID& chunk_id)
 void VoxelRenderer::RenderAllMeshes()
 {
     if (m_voxel_shader == nullptr) return;
-    //m_voxel_shader->use();
+
+    m_voxel_shader->use();
+
+    glm::mat4 projection = glm::perspective(glm::radians(VB::inst().GetCamera()->Zoom),
+        (float)(VB::inst().GetWindow()->GetWidth()) / (float)(VB::inst().GetWindow()->GetHeight()),
+        0.1f, VB::inst().GetGUI()->GetViewDistance());
+    glUniformMatrix4fv(glGetUniformLocation(m_voxel_shader->ID, "projection"),
+        1, GL_FALSE, glm::value_ptr(projection));
+
+    // View
+    glm::mat4 view = VB::inst().GetCamera()->GetViewMatrix();
+    glUniformMatrix4fv(glGetUniformLocation(m_voxel_shader->ID, "view"),
+        1, GL_FALSE, glm::value_ptr(view));
+
+    // Model
+    glm::mat4 model = glm::mat4(1.0f);
+    glUniformMatrix4fv(glGetUniformLocation(m_voxel_shader->ID, "model"),
+        1, GL_FALSE, glm::value_ptr(model));
 
     for (const auto& render_item : VoxelRendererBufferInfoMap)
     {
@@ -377,7 +394,7 @@ MultiChunkSystem::MultiChunkSystem()
     VB::inst().GetLogger()->Print("MultiChunk obj constructed");
 }
 
-void MultiChunkSystem::update()
+void MultiChunkSystem::update_chunks()
 {
     // get nearest chunk indices in range
     glm::ivec2 nearest_chunk_idx;
@@ -390,17 +407,30 @@ void MultiChunkSystem::update()
             glm::ivec2 pawsible_chunk_idx(  nearest_chunk_idx.x + x,
                                             nearest_chunk_idx.y + z);
 
+            
+            ChunkID curr_id = chunk_idx_id(pawsible_chunk_idx);
+            if (m_chunk_list.find(curr_id) != m_chunk_list.end()) continue;
             if (glm::distance(glm::vec2(nearest_chunk_idx), glm::vec2(pawsible_chunk_idx)) > static_cast<float>(m_chunk_gen_radius)) continue;
 
-            ChunkID curr_id = chunk_idx_id(pawsible_chunk_idx);
             std::shared_ptr<Chunk> curr_chunk = std::make_shared<Chunk>(curr_id, glm::ivec3(chunk_idx_to_origin(pawsible_chunk_idx).x, 0, chunk_idx_to_origin(pawsible_chunk_idx).y));
+            m_chunk_list.insert({curr_id, curr_chunk});
             curr_chunk->GenerateChunk();
-            m_chunk_list.insert({curr_id, std::move(curr_chunk)});
 
             VB::inst().GetLogger()->Print("ChunkId: " + std::to_string(curr_id) + " X: " + std::to_string(pawsible_chunk_idx.x) + " Y: " + std::to_string(pawsible_chunk_idx.y));
             VB::inst().GetLogger()->Print("Origin X: " + std::to_string(chunk_idx_to_origin(pawsible_chunk_idx).x) + " Z: " + std::to_string(chunk_idx_to_origin(pawsible_chunk_idx).y));
+
+            VoxelRenderer::VoxelMesh curr_mesh = VB::inst().GetVoxel()->GenerateChunkMesh(*(curr_chunk));
+            VB::inst().GetVoxel()->BufferVoxelMesh(curr_id, curr_mesh);
         }
     }
+}
+
+void MultiChunkSystem::reupdate_chunks()
+{
+    if ((VB::inst().GetClock()->GetTime() - m_refresh_last_time) < m_refresh_delta_time) return;
+    
+    update_chunks();
+    m_refresh_last_time = VB::inst().GetClock()->GetTime();
 }
 
 glm::ivec2 MultiChunkSystem::pos_to_nearest_chunk_idx(glm::vec3 camera_position)

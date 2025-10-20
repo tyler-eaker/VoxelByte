@@ -2,6 +2,7 @@
 #define VOXEL_H
 
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <glad/glad.h>
 #include <string>
 #include <vector>
@@ -100,7 +101,8 @@ private:
 class MultiChunkSystem {
 public:
     MultiChunkSystem();
-    void update();
+    void update_chunks();
+    void reupdate_chunks();
 
     glm::ivec2 pos_to_nearest_chunk_idx(glm::vec3 camera_position);
     const std::unordered_map<ChunkID, std::shared_ptr<Chunk>>& get_chunk_map() const;
@@ -111,6 +113,8 @@ private:
     static const int WORLD_CHUNK_RADIUS = 2048;
     static const int CHUNK_HEIGHT = 1;
 
+    float m_refresh_delta_time = 1.5f;
+    float m_refresh_last_time = 0.0f;
     int m_chunk_gen_radius = 4;
 
     std::unordered_map<ChunkID, std::shared_ptr<Chunk>> m_chunk_list;

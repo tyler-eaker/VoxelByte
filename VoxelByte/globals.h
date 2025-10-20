@@ -8,6 +8,7 @@
 #include "player.h"
 #include "gui.h"
 #include "input.h"
+#include "window.h"
 
 #include <memory>
 
@@ -27,6 +28,7 @@ public:
     std::shared_ptr<Player>             GetPlayer()             { return m_player; }
     std::shared_ptr<GUI>                GetGUI()                { return m_gui; }
     std::shared_ptr<Input>              GetInput()              { return m_input; }
+    std::shared_ptr<Window>             GetWindow()             { return m_window; }
 
 private:
     static VB m_voxelbyte_inst;
@@ -40,6 +42,8 @@ private:
     std::shared_ptr<Player>             m_player;
     std::shared_ptr<GUI>                m_gui;
     std::shared_ptr<Input>              m_input;
+    std::shared_ptr<Window>             m_window;
+
 };
 
 #endif
