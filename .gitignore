@@ -15,3 +15,7 @@ Output/VoxelByte.exe
 VoxelByte/VoxelByte.vcxproj
 VoxelByte/VoxelByte.vcxproj.filters
 VoxelByte/VoxelByte.vcxproj.user
+build_mingw.bat
+VoxelByte/VoxelByte.vcxproj
+VoxelByte/VoxelByte.vcxproj.filters
+VoxelByte/VoxelByte.vcxproj.user
