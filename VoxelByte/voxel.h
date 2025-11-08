@@ -8,6 +8,9 @@
 #include <vector>
 #include <unordered_map>
 #include <memory>
+#include <thread>
+#include <mutex>
+#include <queue>
 #include "shader.h"
 #include "../include/FastNoiseLite/FastNoiseLite.h"
 
@@ -58,7 +61,7 @@ public:
 
     void SetShader(std::shared_ptr<Shader> shader);
 
-    VoxelMesh GenerateChunkMesh(Chunk chunk);
+    std::shared_ptr<VoxelMesh> GenerateChunkMesh(const Chunk& chunk);
     void BufferVoxelMesh(const ChunkID& chunk_id, VoxelMesh& mesh);
     void DeleteVoxelMesh(const ChunkID& chunk_id);
     void RenderMesh(const ChunkID& chunk_id);
@@ -84,9 +87,11 @@ class Chunk
 {
 public:
     static const int CHUNK_SIZE = 64;
+    static const unsigned long long int NULL_CHUNK = 0xFFFFFFFFFFFFFFFF;
 
     Chunk(ChunkID chunk_id, glm::ivec3 origin);
     void GenerateChunk();
+    ChunkID GetID() { return m_chunkID; }
     glm::ivec3 getOrigin();
     inline void SetVoxel(glm::ivec3 pos, const uint8_t& vd);
     uint8_t GetVoxel(glm::ivec3 pos) const;
@@ -101,25 +106,40 @@ private:
 class MultiChunkSystem {
 public:
     MultiChunkSystem();
+    ~MultiChunkSystem();
     void update_chunks();
     void reupdate_chunks();
 
     glm::ivec2 pos_to_nearest_chunk_idx(glm::vec3 camera_position);
     const std::unordered_map<ChunkID, std::shared_ptr<Chunk>>& get_chunk_map() const;
     const glm::ivec3 GetChunkOrigin(const ChunkID& chunk_id);
-
     
 private:
     static const int WORLD_CHUNK_RADIUS = 2048;
     static const int CHUNK_HEIGHT = 1;
 
-    float m_refresh_delta_time = 1.5f;
+    float m_refresh_delta_time = 0.5f;
     float m_refresh_last_time = 0.0f;
     int m_chunk_gen_radius = 4;
+
+    unsigned int m_concurrency_count = 1;
+    bool m_shutdown_workers = false;
 
     std::unordered_map<ChunkID, std::shared_ptr<Chunk>> m_chunk_list;
     std::vector<std::shared_ptr<Chunk>> loaded_chunks;
 
+    std::queue<ChunkID> m_unloaded_chunks;
+    std::vector<std::thread> m_chunk_generator_workers;
+    std::queue<std::pair<ChunkID, std::shared_ptr<VoxelRenderer::VoxelMesh>>> m_mesh_queue;
+    std::mutex m_grab_chunk_mutex;
+    std::mutex m_append_chunk_list_mutex;
+    std::mutex m_buffer_mesh_mutex;
+
+    void thread_chunk_gen_worker();
+    ChunkID thread_grab_chunkid();
+    void thread_append_chunk_list(std::shared_ptr<Chunk> chunk_ptr);
+    void emplace_voxel_mesh(ChunkID chunk_id, std::shared_ptr<VoxelRenderer::VoxelMesh> voxel_mesh);
+    void buffer_voxel_meshes();
     glm::ivec2 chunk_idx_to_origin(glm::ivec2 chunk_idx);
     inline ChunkID chunk_idx_id(glm::ivec2 chunk_idx);
 };

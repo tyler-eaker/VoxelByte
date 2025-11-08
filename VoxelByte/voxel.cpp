@@ -4,6 +4,7 @@
 VoxelRenderer::VoxelRenderer()
 {
     VB::inst().GetLogger()->Print("VoxelRenderer obj constructed");
+    VB::inst().GetLogger()->Print("CPU Cores: " + std::to_string(std::thread::hardware_concurrency()) + "\n");
 }
 
 bool VoxelRenderer::m_initialized = false;
@@ -97,9 +98,9 @@ void VoxelRenderer::SetShader(std::shared_ptr<Shader> shader)
     m_voxel_shader = shader;
 }
 
-VoxelRenderer::VoxelMesh VoxelRenderer::GenerateChunkMesh(Chunk chunk)
+std::shared_ptr<VoxelRenderer::VoxelMesh> VoxelRenderer::GenerateChunkMesh(const Chunk& chunk)
 {
-    VoxelMesh chunkMesh;
+    std::shared_ptr<VoxelMesh> chunkMesh = std::make_shared<VoxelMesh>();
 
     // Sweep over each axis (X, Y and Z)
     for (int d = 0; d < 3; d++)
@@ -201,14 +202,14 @@ VoxelRenderer::VoxelMesh VoxelRenderer::GenerateChunkMesh(Chunk chunk)
                         int* dv = new int[3] {0};
                         dv[v] = h;
 
-                        // Create a quad for this face. Colour, normal or textures are not stored in this block vertex format.
+                        // Create a quad for this face. Color, normal or textures are not stored in this block vertex format.
 
-                        int v0 = chunkMesh.AddVertex((float)(x[0]), (float)(x[1]), (float)(x[2]), voxelId);
-                        int v1 = chunkMesh.AddVertex((float)(x[0] + du[0]), (float)(x[1] + du[1]), (float)(x[2] + du[2]), voxelId);
-                        int v2 = chunkMesh.AddVertex((float)(x[0] + dv[0]), (float)(x[1] + dv[1]), (float)(x[2] + dv[2]), voxelId);
-                        int v3 = chunkMesh.AddVertex((float)(x[0] + du[0] + dv[0]), (float)(x[1] + du[1] + dv[1]), (float)(x[2] + du[2] + dv[2]), voxelId);
-                        chunkMesh.AddIndex(v0, v1, v2);
-                        chunkMesh.AddIndex(v1, v2, v3);
+                        int v0 = chunkMesh->AddVertex((float)(x[0]), (float)(x[1]), (float)(x[2]), voxelId);
+                        int v1 = chunkMesh->AddVertex((float)(x[0] + du[0]), (float)(x[1] + du[1]), (float)(x[2] + du[2]), voxelId);
+                        int v2 = chunkMesh->AddVertex((float)(x[0] + dv[0]), (float)(x[1] + dv[1]), (float)(x[2] + dv[2]), voxelId);
+                        int v3 = chunkMesh->AddVertex((float)(x[0] + du[0] + dv[0]), (float)(x[1] + du[1] + dv[1]), (float)(x[2] + du[2] + dv[2]), voxelId);
+                        chunkMesh->AddIndex(v0, v1, v2);
+                        chunkMesh->AddIndex(v1, v2, v3);
 
                         // Clear this part of the mask, so we don't add duplicate faces
                         for (l = 0; l < h; l++)
@@ -229,7 +230,7 @@ VoxelRenderer::VoxelMesh VoxelRenderer::GenerateChunkMesh(Chunk chunk)
         }
     }
 
-    VB::inst().GetLogger()->Print("Chunk mesh generated. Vtx: " + std::to_string(chunkMesh.vertices.size()) + " Idx: " + std::to_string(chunkMesh.indices.size()));
+    VB::inst().GetLogger()->Print("Chunk mesh generated. Vtx: " + std::to_string(chunkMesh->vertices.size()) + " Idx: " + std::to_string(chunkMesh->indices.size()));
     return chunkMesh;
 }
 
@@ -392,21 +393,35 @@ void Chunk::GenerateChunk()
 MultiChunkSystem::MultiChunkSystem()
 {
     VB::inst().GetLogger()->Print("MultiChunk obj constructed");
+    
+    m_concurrency_count = std::thread::hardware_concurrency();
+    VB::inst().GetLogger()->Print("Core Count: " + std::to_string(m_concurrency_count));
+
+    for (int i = 0; i < m_concurrency_count; i++)
+        m_chunk_generator_workers.push_back(std::thread(&MultiChunkSystem::thread_chunk_gen_worker, this));
 }
+
+MultiChunkSystem::~MultiChunkSystem()
+{
+    m_shutdown_workers = true;
+    for (std::thread &worker : m_chunk_generator_workers) worker.join();
+}
+
 
 void MultiChunkSystem::update_chunks()
 {
     // get nearest chunk indices in range
     glm::ivec2 nearest_chunk_idx;
     nearest_chunk_idx = pos_to_nearest_chunk_idx(VB::inst().GetCamera()->Position);
-    
+
+    buffer_voxel_meshes();
+
     for (int x = -m_chunk_gen_radius; x < m_chunk_gen_radius; x++)
     {
         for (int z = -m_chunk_gen_radius; z < m_chunk_gen_radius; z++)
         {
             glm::ivec2 pawsible_chunk_idx(  nearest_chunk_idx.x + x,
                                             nearest_chunk_idx.y + z);
-
             
             ChunkID curr_id = chunk_idx_id(pawsible_chunk_idx);
             if (m_chunk_list.find(curr_id) != m_chunk_list.end()) continue;
@@ -414,13 +429,10 @@ void MultiChunkSystem::update_chunks()
 
             std::shared_ptr<Chunk> curr_chunk = std::make_shared<Chunk>(curr_id, glm::ivec3(chunk_idx_to_origin(pawsible_chunk_idx).x, 0, chunk_idx_to_origin(pawsible_chunk_idx).y));
             m_chunk_list.insert({curr_id, curr_chunk});
-            curr_chunk->GenerateChunk();
+            m_unloaded_chunks.emplace(curr_id);
 
             VB::inst().GetLogger()->Print("ChunkId: " + std::to_string(curr_id) + " X: " + std::to_string(pawsible_chunk_idx.x) + " Y: " + std::to_string(pawsible_chunk_idx.y));
             VB::inst().GetLogger()->Print("Origin X: " + std::to_string(chunk_idx_to_origin(pawsible_chunk_idx).x) + " Z: " + std::to_string(chunk_idx_to_origin(pawsible_chunk_idx).y));
-
-            VoxelRenderer::VoxelMesh curr_mesh = VB::inst().GetVoxel()->GenerateChunkMesh(*(curr_chunk));
-            VB::inst().GetVoxel()->BufferVoxelMesh(curr_id, curr_mesh);
         }
     }
 }
@@ -447,6 +459,60 @@ glm::ivec2 MultiChunkSystem::pos_to_nearest_chunk_idx(glm::vec3 camera_position)
 const std::unordered_map<ChunkID, std::shared_ptr<Chunk>>& MultiChunkSystem::get_chunk_map() const
 {
     return m_chunk_list;
+}
+
+void MultiChunkSystem::thread_chunk_gen_worker()
+{
+    while (m_shutdown_workers == false)
+    {
+        ChunkID curr_chunk_id = thread_grab_chunkid();
+        if (curr_chunk_id == Chunk::NULL_CHUNK) continue;
+
+        m_chunk_list.at(curr_chunk_id)->GenerateChunk();
+        std::shared_ptr<VoxelRenderer::VoxelMesh> curr_chunk_mesh_ptr = VB::inst().GetVoxel()->GenerateChunkMesh(*(m_chunk_list.at(curr_chunk_id)));
+        emplace_voxel_mesh(curr_chunk_id, curr_chunk_mesh_ptr);
+    }
+}
+
+ChunkID MultiChunkSystem::thread_grab_chunkid()
+{
+    ChunkID return_chunk = Chunk::NULL_CHUNK;
+    m_grab_chunk_mutex.lock();
+
+    if (m_unloaded_chunks.empty() == false)
+    {
+        return_chunk = m_unloaded_chunks.front();
+        m_unloaded_chunks.pop();
+    }
+
+    m_grab_chunk_mutex.unlock();
+    return return_chunk;
+}
+
+void MultiChunkSystem::thread_append_chunk_list(std::shared_ptr<Chunk> chunk_ptr)
+{
+    m_append_chunk_list_mutex.lock();
+    m_chunk_list.insert({chunk_ptr->GetID(), chunk_ptr});
+    m_append_chunk_list_mutex.unlock();
+}
+
+void MultiChunkSystem::emplace_voxel_mesh(ChunkID chunk_id, std::shared_ptr<VoxelRenderer::VoxelMesh> voxel_mesh)
+{
+    m_buffer_mesh_mutex.lock();
+    m_mesh_queue.emplace(std::make_pair(chunk_id, voxel_mesh));
+    m_buffer_mesh_mutex.unlock();
+}
+
+void MultiChunkSystem::buffer_voxel_meshes()
+{
+    while (m_mesh_queue.empty() == false)
+    {
+        auto curr_id_mesh = m_mesh_queue.front();
+        m_mesh_queue.pop();
+        ChunkID curr_id = curr_id_mesh.first;
+        std::shared_ptr<VoxelRenderer::VoxelMesh> curr_mesh = curr_id_mesh.second;
+        VB::inst().GetVoxel()->BufferVoxelMesh(curr_id, *curr_mesh);
+    }
 }
 
 glm::ivec2 MultiChunkSystem::chunk_idx_to_origin(glm::ivec2 chunk_idx)
