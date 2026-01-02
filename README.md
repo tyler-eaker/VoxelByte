@@ -3,7 +3,7 @@
 VoxelByte is a lightweight 3D voxel engine written in **C++** using **OpenGL**.  
 It’s designed as a foundation for experimenting with voxel rendering, chunk management, and real-time world generation.
 
-<img width="1920" height="1080" alt="VoxelByte_(1)_2uPNJaZqMx" src="https://github.com/user-attachments/assets/c8560774-bd3c-4261-ac60-e94c8563f81e" />
+<img width="1918" height="1076" alt="image" src="https://github.com/user-attachments/assets/e70b6136-b4dd-42d8-9048-e00c38015e14" />
 
 ---
 
